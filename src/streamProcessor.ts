@@ -4,7 +4,7 @@ import { notifySubscribers } from './subscriptions';
 import { Database, NewStreamOut } from './types';
 import { Kysely, Transaction } from 'kysely';
 import { createGame, findGameById, updateGame } from './gameStore';
-import { createUser, findUsers } from './userStore';
+import { createUser, findUserByEmail, findUsers } from './userStore';
 
 export async function processStreamEvent(
     newStreamEvent: NewStreamOut,
@@ -15,8 +15,8 @@ export async function processStreamEvent(
     switch (newStreamEventData.type) {
         case 'user-login-intended': {
             const userEmail = newStreamEventData.payload.user.email;
-            const existingUser = await findUsers(trx, { email: userEmail });
-            if (existingUser.length === 0) {
+            const existingUser = await findUserByEmail(trx, userEmail);
+            if (existingUser === undefined) {
                 const newUser = await createUser(trx, {
                     email: userEmail,
                 });
@@ -45,8 +45,8 @@ export async function processStreamEvent(
                 data: JSON.stringify({
                     type: 'user-login-succeeded',
                     payload: {
-                        ...newStreamEventData.payload
-                    }
+                        ...newStreamEventData.payload,
+                    },
                 }),
             };
             const loginStreamOut = await createStreamOut(
@@ -70,8 +70,8 @@ export async function processStreamEvent(
                     data: JSON.stringify({
                         type: 'like-succeeded',
                         payload: {
-                            ...newStreamEventData.payload
-                        }
+                            ...newStreamEventData.payload,
+                        },
                     }),
                 };
                 const streamOutLikeSucceeded = await createStreamOut(
@@ -96,7 +96,7 @@ export async function processStreamEvent(
                             type: 'game-completed',
                             payload: {
                                 game: updatedGame,
-                            }
+                            },
                         }),
                     };
                     const streamOutGameCompleted = await createStreamOut(
@@ -115,7 +115,7 @@ export async function processStreamEvent(
                         type: 'game-updated',
                         payload: {
                             game: updatedGame,
-                        }
+                        },
                     }),
                 };
                 const streamOutGameUpdated = await createStreamOut(
@@ -133,7 +133,7 @@ export async function processStreamEvent(
                     type: 'like-failed',
                     payload: {
                         ...newStreamEventData.payload,
-                    }
+                    },
                 }),
             };
             const streamOut = await createStreamOut(trx, newStreamOut);

@@ -9,6 +9,17 @@ export async function findUserById(trx: Transaction<Database>, id: number) {
         .executeTakeFirst();
 }
 
+export async function findUserByEmail(
+    trx: Transaction<Database>,
+    email: string
+) {
+    return await trx
+        .selectFrom('user')
+        .where('email', '=', email)
+        .selectAll()
+        .executeTakeFirst();
+}
+
 export async function findUsers(
     trx: Transaction<Database>,
     criteria: Partial<User>
@@ -18,9 +29,12 @@ export async function findUsers(
     if (criteria.id) {
         query = query.where('id', '=', criteria.id); // Kysely is immutable, you must re-assign!
     }
+
+    if (criteria.email) {
+        query = query.where('email', '=', criteria.email);
+    }
     return await query.selectAll().execute();
 }
-
 export async function findUsersGreaterThanUserId(
     trx: Transaction<Database>,
     id: number
