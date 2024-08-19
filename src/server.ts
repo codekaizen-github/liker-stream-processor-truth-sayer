@@ -74,6 +74,7 @@ app.post('/streamIn', async (req, res) => {
                     db,
                     trx
                 );
+                return res.status(200).send();
             }
             throw e;
         }
