@@ -25,7 +25,6 @@ export async function processStreamEvent(
                 }
                 const newUserStreamOut = {
                     data: JSON.stringify({
-                        ...newStreamEventData,
                         type: 'create-new-user-succeeded',
                         payload: {
                             ...newStreamEventData.payload,
@@ -44,8 +43,10 @@ export async function processStreamEvent(
             }
             const newLoginStreamOut = {
                 data: JSON.stringify({
-                    ...newStreamEventData,
                     type: 'user-login-succeeded',
+                    payload: {
+                        ...newStreamEventData.payload
+                    }
                 }),
             };
             const loginStreamOut = await createStreamOut(
@@ -67,8 +68,10 @@ export async function processStreamEvent(
             if (game !== undefined && game.likeCount < 50) {
                 const newStreamOutLikeSucceeded = {
                     data: JSON.stringify({
-                        ...newStreamEventData,
                         type: 'like-succeeded',
+                        payload: {
+                            ...newStreamEventData.payload
+                        }
                     }),
                 };
                 const streamOutLikeSucceeded = await createStreamOut(
@@ -89,9 +92,11 @@ export async function processStreamEvent(
                 if (updatedGame.likeCount === 50) {
                     const newStreamOutGameCompleted = {
                         data: JSON.stringify({
-                            ...newStreamEventData,
+                            // Don't pass the user email
                             type: 'game-completed',
-                            game: updatedGame,
+                            payload: {
+                                game: updatedGame,
+                            }
                         }),
                     };
                     const streamOutGameCompleted = await createStreamOut(
@@ -106,9 +111,11 @@ export async function processStreamEvent(
                 }
                 const newStreamOutGameUpdated = {
                     data: JSON.stringify({
-                        ...newStreamEventData,
+                        // Don't pass the user email
                         type: 'game-updated',
-                        game: updatedGame,
+                        payload: {
+                            game: updatedGame,
+                        }
                     }),
                 };
                 const streamOutGameUpdated = await createStreamOut(
@@ -123,8 +130,10 @@ export async function processStreamEvent(
             }
             const newStreamOut = {
                 data: JSON.stringify({
-                    ...newStreamEventData,
                     type: 'like-failed',
+                    payload: {
+                        ...newStreamEventData.payload,
+                    }
                 }),
             };
             const streamOut = await createStreamOut(trx, newStreamOut);
@@ -143,10 +152,10 @@ export async function processStreamEvent(
             }
             const newStreamOut = {
                 data: JSON.stringify({
-                    ...newStreamEventData,
                     type: 'game-started-succeeded',
                     payload: {
-                        ...newStreamEventData.payload,
+                        // Don't pass user email
+                        // ...newStreamEventData.payload,
                         game: newGame,
                     },
                 }),
