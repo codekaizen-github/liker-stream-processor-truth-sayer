@@ -9,6 +9,8 @@ async function reset() {
     console.log('Truncated upstreamControl');
     await sql`TRUNCATE TABLE game`.execute(db);
     console.log('Truncated game');
+    await sql`TRUNCATE TABLE user`.execute(db);
+    console.log('Truncated user');
     await db.destroy();
 }
 
