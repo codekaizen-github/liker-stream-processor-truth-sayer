@@ -5,6 +5,7 @@ export interface Database {
     httpSubscriber: HttpSubscriberTable;
     upstreamControl: UpstreamControlTable;
     game: GameTable;
+    user: UserTable;
 }
 
 // This interface describes the `person` table to Kysely. Table
@@ -55,3 +56,12 @@ export interface GameTable {
 export type Game = Selectable<GameTable>;
 export type NewGame = Insertable<GameTable>;
 export type GameUpdate = Updateable<GameTable>;
+
+export interface UserTable {
+    id: Generated<number>;
+    email: string;
+}
+
+export type User = Selectable<UserTable>;
+export type NewUser = Insertable<UserTable>;
+export type UserUpdate = Updateable<UserTable>;

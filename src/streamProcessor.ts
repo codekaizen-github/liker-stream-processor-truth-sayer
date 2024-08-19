@@ -4,6 +4,7 @@ import { notifySubscribers } from './subscriptions';
 import { Database, NewStreamOut } from './types';
 import { Kysely, Transaction } from 'kysely';
 import { createGame, findGameById, updateGame } from './gameStore';
+import { createUser, findUsers } from './userStore';
 
 export async function processStreamEvent(
     newStreamEvent: NewStreamOut,
@@ -12,6 +13,51 @@ export async function processStreamEvent(
 ) {
     const newStreamEventData = JSON.parse(newStreamEvent.data);
     switch (newStreamEventData.type) {
+        case 'user-login-intended': {
+            const userEmail = newStreamEventData.payload.user.email;
+            const existingUser = await findUsers(trx, { email: userEmail });
+            if (existingUser.length === 0) {
+                const newUser = await createUser(trx, {
+                    email: userEmail,
+                });
+                if (newUser === undefined) {
+                    throw new Error('Failed to create user');
+                }
+                const newUserStreamOut = {
+                    data: JSON.stringify({
+                        ...newStreamEventData,
+                        type: 'create-new-user-succeeded',
+                        payload: {
+                            ...newStreamEventData.payload,
+                            user: newUser,
+                        },
+                    }),
+                };
+                const userStreamOut = await createStreamOut(
+                    trx,
+                    newUserStreamOut
+                );
+                if (userStreamOut === undefined) {
+                    throw new Error('Failed to create stream out');
+                }
+                notifySubscribers(db, userStreamOut);
+            }
+            const newLoginStreamOut = {
+                data: JSON.stringify({
+                    ...newStreamEventData,
+                    type: 'user-login-succeeded',
+                }),
+            };
+            const loginStreamOut = await createStreamOut(
+                trx,
+                newLoginStreamOut
+            );
+            if (loginStreamOut === undefined) {
+                throw new Error('Failed to create stream out');
+            }
+            notifySubscribers(db, loginStreamOut);
+            break;
+        }
         case 'like-intended': {
             // Get the game id
             const gameId = newStreamEventData.payload.game.id;
