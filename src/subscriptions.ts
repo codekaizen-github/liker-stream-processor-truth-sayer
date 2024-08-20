@@ -15,13 +15,16 @@ export async function notifySubscribers(
     db: Kysely<Database>,
     streamOut: StreamOut
 ): Promise<void> {
-    await db.transaction().execute(async (trx) => {
-        const subscriptions = await findHttpSubscribers(trx, {});
-        for (const subscription of subscriptions) {
-            // non-blocking
-            notifySubscriberUrl(subscription.url, streamOut);
-        }
-    });
+    await db
+        .transaction()
+        .setIsolationLevel('serializable')
+        .execute(async (trx) => {
+            const subscriptions = await findHttpSubscribers(trx, {});
+            for (const subscription of subscriptions) {
+                // non-blocking
+                notifySubscriberUrl(subscription.url, streamOut);
+            }
+        });
 }
 
 export async function notifySubscriberUrl(
