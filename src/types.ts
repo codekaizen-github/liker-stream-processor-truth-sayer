@@ -26,7 +26,7 @@ export interface StreamOutTable {
     // using the `Generated` type. This way they are automatically
     // made optional in inserts and updates.
     id: Generated<number>;
-    data: string;
+    data: any;
 }
 
 // You should not use the table schema interfaces directly. Instead, you should
@@ -35,9 +35,9 @@ export interface StreamOutTable {
 //
 // Most of the time you should trust the type inference and not use explicit
 // types at all. These types can be useful when typing function arguments.
-export type StreamOut = Selectable<StreamOutTable & { data: any }>;
-export type NewStreamOut = Insertable<StreamOutTable>;
-export type StreamOutUpdate = Updateable<StreamOutTable>;
+export type StreamOut = Selectable<StreamOutTable>;
+export type NewStreamOut = Insertable<StreamOutTable & { data: string }>;
+export type StreamOutUpdate = Updateable<StreamOutTable & { data: string }>;
 
 export interface HttpSubscriberTable {
     id: Generated<number>;
