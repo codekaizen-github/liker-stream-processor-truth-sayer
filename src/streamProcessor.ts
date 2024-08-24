@@ -1,17 +1,15 @@
-import { Response } from 'express';
-import { createStreamOut } from './streamOutStore';
+import { createStreamOutFromStreamEvent } from './streamOutStore';
 import { notifySubscribers } from './subscriptions';
-import { Database, NewStreamOut } from './types';
-import { Kysely, Transaction } from 'kysely';
+import { Database, NewStreamEvent } from './types';
+import { Transaction } from 'kysely';
+import { createUser, findUserByEmail } from './userStore';
 import { createGame, findGameById, updateGame } from './gameStore';
-import { createUser, findUserByEmail, findUsers } from './userStore';
 
 export async function processStreamEvent(
-    newStreamEvent: NewStreamOut,
-    db: Kysely<Database>,
-    trx: Transaction<Database>
+    trx: Transaction<Database>,
+    newStreamEvent: NewStreamEvent
 ) {
-    const newStreamEventData = JSON.parse(newStreamEvent.data);
+    const newStreamEventData = newStreamEvent.data;
     switch (newStreamEventData.type) {
         case 'user-login-intended': {
             const userEmail = newStreamEventData.payload.user.email;
@@ -24,39 +22,39 @@ export async function processStreamEvent(
                     throw new Error('Failed to create user');
                 }
                 const newUserStreamOut = {
-                    data: JSON.stringify({
+                    data: {
                         type: 'create-new-user-succeeded',
                         payload: {
                             ...newStreamEventData.payload,
                             user: newUser,
                         },
-                    }),
+                    },
                 };
-                const userStreamOut = await createStreamOut(
+                const userStreamOut = await createStreamOutFromStreamEvent(
                     trx,
                     newUserStreamOut
                 );
                 if (userStreamOut === undefined) {
                     throw new Error('Failed to create stream out');
                 }
-                notifySubscribers(db, userStreamOut);
+                notifySubscribers(trx, userStreamOut);
             }
             const newLoginStreamOut = {
-                data: JSON.stringify({
+                data: {
                     type: 'user-login-succeeded',
                     payload: {
                         ...newStreamEventData.payload,
                     },
-                }),
+                },
             };
-            const loginStreamOut = await createStreamOut(
+            const loginStreamOut = await createStreamOutFromStreamEvent(
                 trx,
                 newLoginStreamOut
             );
             if (loginStreamOut === undefined) {
                 throw new Error('Failed to create stream out');
             }
-            notifySubscribers(db, loginStreamOut);
+            notifySubscribers(trx, loginStreamOut);
             break;
         }
         case 'like-intended': {
@@ -67,21 +65,22 @@ export async function processStreamEvent(
             console.log({ game });
             if (game !== undefined && game.likeCount < 50) {
                 const newStreamOutLikeSucceeded = {
-                    data: JSON.stringify({
+                    data: {
                         type: 'like-succeeded',
                         payload: {
                             ...newStreamEventData.payload,
                         },
-                    }),
+                    },
                 };
-                const streamOutLikeSucceeded = await createStreamOut(
-                    trx,
-                    newStreamOutLikeSucceeded
-                );
+                const streamOutLikeSucceeded =
+                    await createStreamOutFromStreamEvent(
+                        trx,
+                        newStreamOutLikeSucceeded
+                    );
                 if (streamOutLikeSucceeded === undefined) {
                     throw new Error('Failed to create stream out');
                 }
-                notifySubscribers(db, streamOutLikeSucceeded);
+                notifySubscribers(trx, streamOutLikeSucceeded);
                 await updateGame(trx, gameId, {
                     likeCount: game.likeCount + 1,
                 });
@@ -91,56 +90,61 @@ export async function processStreamEvent(
                 }
                 if (updatedGame.likeCount === 50) {
                     const newStreamOutGameCompleted = {
-                        data: JSON.stringify({
+                        data: {
                             // Don't pass the user email
                             type: 'game-completed',
                             payload: {
                                 game: updatedGame,
                             },
-                        }),
+                        },
                     };
-                    const streamOutGameCompleted = await createStreamOut(
-                        trx,
-                        newStreamOutGameCompleted
-                    );
+                    const streamOutGameCompleted =
+                        await createStreamOutFromStreamEvent(
+                            trx,
+                            newStreamOutGameCompleted
+                        );
                     if (streamOutGameCompleted === undefined) {
                         throw new Error('Failed to create stream out');
                     }
-                    notifySubscribers(db, streamOutGameCompleted);
+                    notifySubscribers(trx, streamOutGameCompleted);
                     break;
                 }
                 const newStreamOutGameUpdated = {
-                    data: JSON.stringify({
+                    data: {
                         // Don't pass the user email
                         type: 'game-updated',
                         payload: {
                             game: updatedGame,
                         },
-                    }),
+                    },
                 };
-                const streamOutGameUpdated = await createStreamOut(
-                    trx,
-                    newStreamOutGameUpdated
-                );
+                const streamOutGameUpdated =
+                    await createStreamOutFromStreamEvent(
+                        trx,
+                        newStreamOutGameUpdated
+                    );
                 if (streamOutGameUpdated === undefined) {
                     throw new Error('Failed to create stream out');
                 }
-                notifySubscribers(db, streamOutGameUpdated);
+                notifySubscribers(trx, streamOutGameUpdated);
                 break;
             }
             const newStreamOut = {
-                data: JSON.stringify({
+                data: {
                     type: 'like-failed',
                     payload: {
                         ...newStreamEventData.payload,
                     },
-                }),
+                },
             };
-            const streamOut = await createStreamOut(trx, newStreamOut);
+            const streamOut = await createStreamOutFromStreamEvent(
+                trx,
+                newStreamOut
+            );
             if (streamOut === undefined) {
                 throw new Error('Failed to create stream out');
             }
-            notifySubscribers(db, streamOut);
+            notifySubscribers(trx, streamOut);
             break;
         }
         case 'game-started-intended': {
@@ -151,20 +155,23 @@ export async function processStreamEvent(
                 throw new Error('Failed to create game');
             }
             const newStreamOut = {
-                data: JSON.stringify({
+                data: {
                     type: 'game-started-succeeded',
                     payload: {
                         // Don't pass user email
                         // ...newStreamEventData.payload,
                         game: newGame,
                     },
-                }),
+                },
             };
-            const streamOut = await createStreamOut(trx, newStreamOut);
+            const streamOut = await createStreamOutFromStreamEvent(
+                trx,
+                newStreamOut
+            );
             if (streamOut === undefined) {
                 throw new Error('Failed to create stream out');
             }
-            notifySubscribers(db, streamOut);
+            notifySubscribers(trx, streamOut);
             break;
         }
         default: {

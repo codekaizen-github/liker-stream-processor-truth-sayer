@@ -1,5 +1,14 @@
 import { Generated, Insertable, Selectable, Updateable } from 'kysely';
 
+export interface NewStreamEvent {
+    data: any;
+}
+
+export interface OrderedStreamEvent {
+    id: number;
+    data: any;
+}
+
 export interface Database {
     streamOut: StreamOutTable;
     httpSubscriber: HttpSubscriberTable;
@@ -26,7 +35,7 @@ export interface StreamOutTable {
 //
 // Most of the time you should trust the type inference and not use explicit
 // types at all. These types can be useful when typing function arguments.
-export type StreamOut = Selectable<StreamOutTable>;
+export type StreamOut = Selectable<StreamOutTable & { data: any }>;
 export type NewStreamOut = Insertable<StreamOutTable>;
 export type StreamOutUpdate = Updateable<StreamOutTable>;
 

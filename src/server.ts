@@ -20,7 +20,6 @@ import {
     StreamEventIdDuplicateException,
     StreamEventOutOfSequenceException,
 } from './exceptions';
-import { url } from 'inspector';
 
 // Create an Express application
 const app = express();
@@ -37,24 +36,13 @@ app.get('/', (req, res) => {
 });
 
 app.post('/streamIn', async (req, res) => {
-    /*
-	    {
-        "id": 1,
-        "data": {
-            "type": "test",
-            "payload": {
-                "key": "value"
-            }
-        }
-    }
-	*/
-    const newStreamEvent = req.body;
     await db
         .transaction()
         .setIsolationLevel('serializable')
         .execute(async (trx) => {
             try {
-                await processStreamEventInTotalOrder(newStreamEvent, db, trx);
+                console.log({reqBody: req.body});
+                await processStreamEventInTotalOrder(trx, req.body);
             } catch (e) {
                 // Handle StreamEventIdDuplicateException and StreamEventOutOfSequenceException differently than other exceptions
                 if (e instanceof StreamEventIdDuplicateException) {
@@ -72,12 +60,11 @@ app.post('/streamIn', async (req, res) => {
                         return;
                     }
                     pollForLatest(
+                        trx,
                         process.env
                             .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT,
-                        db,
-                        trx
                     );
-                    return res.status(200).send();
+                    return res.status(201).send();
                 }
                 throw e;
             }
@@ -178,10 +165,9 @@ app.listen(port, () => {
                 return;
             }
             await pollForLatest(
+                trx,
                 process.env
                     .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT,
-                db,
-                trx
             );
         });
 })();
@@ -197,6 +183,6 @@ app.listen(port, () => {
                 return;
             }
             // non-blocking
-            notifySubscribers(db, record);
+            notifySubscribers(trx, record);
         });
 })();
