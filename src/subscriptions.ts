@@ -1,14 +1,13 @@
-import { Kysely, Transaction } from 'kysely';
-import {
-    Database,
-    OrderedStreamEvent,
-    StreamOut,
-} from './types';
+import { Kysely, sql, Transaction } from 'kysely';
+import { Database, OrderedStreamEvent, StreamOut } from './types';
 import { findHttpSubscribers } from './httpSubscriberStore';
 import { processStreamEvent } from './streamProcessor';
 import {
     createUpstreamControl,
     getMostRecentUpstreamControl,
+    getUpstreamControlForUpdate,
+    insertIntoIgnoreUpstreamControl,
+    updateUpstreamControl,
 } from './upstreamControlStore';
 import {
     StreamEventIdDuplicateException,
@@ -66,11 +65,15 @@ export async function pollForLatest(
     trx: Transaction<Database>,
     url: string
 ): Promise<void> {
-    const upstreamControl = await getMostRecentUpstreamControl(trx);
-    const upstreamControlStreamInId = upstreamControl
-        ? upstreamControl.streamInId
-        : 0;
-    poll(trx, url, upstreamControlStreamInId);
+    console.log('Polling for latest');
+    console.log(`Poll about to get upstream control for update`);
+    const upstreamControlLock = await getUpstreamControlForUpdate(trx, 0); // Prevents duplicate entry keys and insertions in other tables
+    await insertIntoIgnoreUpstreamControl(trx, { id: 0, streamInId: 0 });
+    const upstreamControl = await getUpstreamControlForUpdate(trx, 0); // Prevents duplicate entry keys and insertions in other tables
+    if (!upstreamControl) {
+        throw new Error('Failed to get upstream control for update');
+    }
+    poll(trx, url, upstreamControl.id);
 }
 
 export async function makePollRequest(
@@ -91,6 +94,7 @@ export async function poll(
     url: string,
     afterId: number
 ): Promise<void> {
+    console.log('Polling');
     // Gets any stream events between last recorded event and this neweset event (if there are any). Hypothetically, there could be gaps in the streamIn IDs.
     const pollResults = await makePollRequest(url, afterId);
     if (undefined === pollResults?.length || pollResults.length === 0) {
@@ -98,12 +102,12 @@ export async function poll(
     }
     // Assumes that the upstream service will return the events in order
     for (const pollResult of pollResults) {
-        console.log({pollResult});
         try {
             await processStreamEventInTotalOrder(trx, pollResult);
         } catch (e) {
             // Handle StreamEventIdDuplicateException and StreamEventOutOfSequenceException differently than other exceptions
             if (e instanceof StreamEventIdDuplicateException) {
+                console.warn('Stream event ID duplicate');
                 // If the event ID is a duplicate, we can safely ignore it
                 continue;
             }
@@ -122,19 +126,45 @@ export async function processStreamEventInTotalOrder(
     trx: Transaction<Database>,
     orderedStreamEvent: OrderedStreamEvent
 ): Promise<void> {
-    const upstreamControl = await getMostRecentUpstreamControl(trx);
-    const upstreamControlStreamInId = upstreamControl
-        ? upstreamControl.streamInId
-        : 0;
-    console.log({ upstreamControlStreamInId });
-    console.log({ newStreamEvent: orderedStreamEvent });
-    if (orderedStreamEvent.id <= upstreamControlStreamInId) {
+    /*
+    START TRANSACTION;
+
+    -- Step 1: Lock the row for updates
+    SELECT config_value FROM config_table WHERE config_id = 1 FOR UPDATE;
+
+    -- Step 2: Try to insert the row with counter = 0
+    -- If the row already exists, the insert will be ignored
+    INSERT IGNORE INTO config_table (config_id, config_value, version)
+    VALUES (1, 0, 1);
+
+    -- Step 3: Select the most recent value for the row
+    SELECT config_value FROM config_table WHERE config_id = 1 FOR UPDATE;
+
+    -- Step 4: Perform your operations on config_value
+    UPDATE config_table SET config_value = config_value + 1 WHERE config_id = 1;
+
+    -- Step 5: Commit the transaction
+    COMMIT;
+    */
+    const upstreamForUpdateLock = getUpstreamControlForUpdate(trx, 0); // Prevents duplicate entry keys and insertions in other tables
+    const upstreamControlIgnore = await insertIntoIgnoreUpstreamControl(trx, {
+        id: 0,
+        streamInId: 0,
+    });
+    const upstreamControl = await getUpstreamControlForUpdate(trx, 0);
+    if (upstreamControl === undefined) {
+        throw new Error('Unable to find or create upstreamControl');
+    }
+    if (orderedStreamEvent.id <= upstreamControl.streamInId) {
         throw new StreamEventIdDuplicateException();
     }
-    if (orderedStreamEvent.id > upstreamControlStreamInId + 1) {
+    if (orderedStreamEvent.id > upstreamControl.streamInId + 1) {
         throw new StreamEventOutOfSequenceException();
     }
     await processStreamEvent(trx, orderedStreamEvent);
-    await trx.deleteFrom('upstreamControl').execute();
-    await createUpstreamControl(trx, { streamInId: orderedStreamEvent.id });
+    await updateUpstreamControl(
+        trx,
+        upstreamControl.id,
+        { streamInId: upstreamControl.streamInId + 1}
+    );
 }
