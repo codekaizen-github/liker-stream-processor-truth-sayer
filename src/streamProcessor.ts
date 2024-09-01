@@ -58,6 +58,15 @@ export async function processStreamEvent(
             break;
         }
         case 'like-intended': {
+            // Pass thru the like-intended
+            const streamOutLikeIntended = await createStreamOutFromStreamEvent(
+                trx,
+                newStreamEvent
+            );
+            if (streamOutLikeIntended === undefined) {
+                throw new Error('Failed to create stream out');
+            }
+            notifySubscribers(trx, streamOutLikeIntended);
             // Get the game id
             const gameId = newStreamEventData.payload.game.id;
             // Get the game state
