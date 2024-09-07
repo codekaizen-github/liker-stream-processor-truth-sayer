@@ -19,6 +19,7 @@ export default async function onEvent(
     // Get the upstream control lock
     try {
         const results = await onEventProcessSingle(event);
+        console.log({ results });
         if (results.length) {
             for (const result of results) {
                 notifySubscribers(result);
