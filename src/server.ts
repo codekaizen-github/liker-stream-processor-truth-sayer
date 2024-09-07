@@ -2,7 +2,9 @@
 import express from 'express';
 import { db } from './database';
 import {
-    findStreamOutsGreaterThanStreamOutId,
+    createStreamOutFromStreamEvent,
+    findStreamOutsGreaterThanStreamId,
+    findTotallyOrderedStreamEventsGreaterThanStreamId,
     getMostRecentStreamOut,
 } from './streamOutStore';
 import {
@@ -11,15 +13,15 @@ import {
     findHttpSubscribers,
 } from './httpSubscriberStore';
 import {
-    notifySubscribers,
-    pollForLatest,
-    processStreamEventInTotalOrder,
-    subscribe,
-} from './subscriptions';
-import {
     StreamEventIdDuplicateException,
     StreamEventOutOfSequenceException,
 } from './exceptions';
+import onEvent from './transmissionControl/onEvent';
+import { buildFetchUpstream } from './transmissionControl/buildFetchUpstream';
+import { syncUpstream } from './transmissionControl/syncUpstream';
+import { subscribe } from './subscribe';
+import { notifySubscribers } from './transmissionControl/notifySubscribers';
+import { getMostRecentTotallyOrderedStreamEvent } from './getMostRecentTotallyOrderedStreamEvent';
 
 // Create an Express application
 const app = express();
@@ -36,50 +38,26 @@ app.get('/', (req, res) => {
 });
 
 app.post('/streamIn', async (req, res) => {
-    console.log('Received streamIn', req.body);
-    // Random delay
-    await new Promise((resolve) => setTimeout(resolve, Math.random() * 1000));
     try {
-        await db
-            .transaction()
-            .setIsolationLevel('serializable')
-            .execute(async (trx) => {
-                try {
-                    await processStreamEventInTotalOrder(trx, req.body);
-                } catch (e) {
-                    // Handle StreamEventIdDuplicateException and StreamEventOutOfSequenceException differently than other exceptions
-                    if (e instanceof StreamEventIdDuplicateException) {
-                        console.log('Duplicate event ID', req.body);
-                        // If the event ID is a duplicate, we can safely ignore it
-                        return res.status(200).send();
-                    }
-                    if (e instanceof StreamEventOutOfSequenceException) {
-                        console.log('Out of sequence event ID', req.body);
-                        // If the event ID is out of sequence, there is an issue with the upstream service
-                        // We should stop polling and wait for the upstream service to catch up
-                        if (
-                            process.env
-                                .LIKER_STREAM_PROCESSOR_USER_EVENTS_UPSTREAM_URL_STREAM_OUT ===
-                            undefined
-                        ) {
-                            return;
-                        }
-                        // TODO - is the lock still on?
-                        pollForLatest(
-                            trx,
-                            process.env
-                                .LIKER_STREAM_PROCESSOR_USER_EVENTS_UPSTREAM_URL_STREAM_OUT
-                        );
-                        return res.status(201).send();
-                    }
-                    throw e;
-                }
-                return res.status(201).send();
-            });
+        if (
+            process.env
+                .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT ===
+            undefined
+        ) {
+            throw new Error('Upstream URL is not defined');
+        }
+        await onEvent(
+            req.body,
+            buildFetchUpstream(
+                process.env
+                    .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT
+            )
+        );
     } catch (e) {
-        console.error(e, req.body);
+        console.error(e);
         return res.status(500).send();
     }
+    return res.status(201).send();
 });
 
 app.get('/streamOut', async (req, res) => {
@@ -89,10 +67,11 @@ app.get('/streamOut', async (req, res) => {
         .transaction()
         .setIsolationLevel('serializable')
         .execute(async (trx) => {
-            const records = await findStreamOutsGreaterThanStreamOutId(
-                trx,
-                afterId
-            );
+            const records =
+                await findTotallyOrderedStreamEventsGreaterThanStreamId(
+                    trx,
+                    afterId
+                );
             return res.json(records);
         });
     // Find all log records with an ID greater than 'afterId'
@@ -163,36 +142,31 @@ app.listen(port, () => {
 
 // Poll for the latest log records
 (async () => {
-    await db
-        .transaction()
-        .setIsolationLevel('serializable')
-        .execute(async (trx) => {
-            if (
-                process.env
-                    .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT ===
-                undefined
-            ) {
-                return;
-            }
-            await pollForLatest(
-                trx,
-                process.env
-                    .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT,
-            );
-        });
+    try {
+        if (
+            process.env
+                .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT ===
+            undefined
+        ) {
+            return;
+        }
+        const fetchUpstream = buildFetchUpstream(
+            process.env
+                .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT
+        );
+        await syncUpstream(fetchUpstream);
+    } catch (e) {
+        console.error(e);
+    }
 })();
 
 // Get the most recent log record and notify subscribers
+// Get the most recent log record and notify subscribers
 (async () => {
-    await db
-        .transaction()
-        .setIsolationLevel('serializable')
-        .execute(async (trx) => {
-            const record = await getMostRecentStreamOut(trx);
-            if (record === undefined) {
-                return;
-            }
-            // non-blocking
-            notifySubscribers(trx, record);
-        });
+    const result = await getMostRecentTotallyOrderedStreamEvent();
+    if (result === undefined) {
+        return;
+    }
+    // non-blocking
+    notifySubscribers(result);
 })();

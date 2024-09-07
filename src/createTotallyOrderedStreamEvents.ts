@@ -1,18 +1,21 @@
-import { createStreamOutFromStreamEvent } from './streamOutStore';
-import { notifySubscribers } from './subscriptions';
-import { Database, NewStreamEvent } from './types';
 import { Transaction } from 'kysely';
+import { createStreamOutFromStreamEvent } from './streamOutStore';
+import { Database } from './types';
+import {
+    NewTotallyOrderedStreamEvent,
+    TotallyOrderedStreamEvent,
+} from './transmissionControl/types';
 import { createUser, findUserByEmail } from './userStore';
 import { createGame, findGameById, updateGame } from './gameStore';
 
-export async function processStreamEvent(
+export async function createTotallyOrderedStreamEvents(
     trx: Transaction<Database>,
-    newStreamEvent: NewStreamEvent
-) {
-    const newStreamEventData = newStreamEvent.data;
-    switch (newStreamEventData.type) {
+    streamEvent: NewTotallyOrderedStreamEvent
+): Promise<TotallyOrderedStreamEvent[]> {
+    const results: TotallyOrderedStreamEvent[] = [];
+    switch (streamEvent.data.type) {
         case 'user-login-intended': {
-            const userEmail = newStreamEventData.payload.user.email;
+            const userEmail = streamEvent.data.payload.user.email;
             const existingUser = await findUserByEmail(trx, userEmail);
             if (existingUser === undefined) {
                 const newUser = await createUser(trx, {
@@ -21,75 +24,69 @@ export async function processStreamEvent(
                 if (newUser === undefined) {
                     throw new Error('Failed to create user');
                 }
-                const newUserStreamOut = {
-                    data: {
-                        type: 'create-new-user-succeeded',
-                        payload: {
-                            ...newStreamEventData.payload,
-                            user: newUser,
-                        },
-                    },
-                };
                 const userStreamOut = await createStreamOutFromStreamEvent(
                     trx,
-                    newUserStreamOut
+                    {
+                        totalOrderId: streamEvent.totalOrderId,
+                        data: {
+                            type: 'create-new-user-succeeded',
+                            payload: {
+                                ...streamEvent.data.payload,
+                                user: newUser,
+                            },
+                        },
+                    }
                 );
                 if (userStreamOut === undefined) {
                     throw new Error('Failed to create stream out');
                 }
-                notifySubscribers(trx, userStreamOut);
+                results.push(userStreamOut);
             }
-            const newLoginStreamOut = {
+            const loginStreamOut = await createStreamOutFromStreamEvent(trx, {
+                totalOrderId: streamEvent.totalOrderId,
                 data: {
                     type: 'user-login-succeeded',
                     payload: {
-                        ...newStreamEventData.payload,
+                        ...streamEvent.data.payload,
                     },
                 },
-            };
-            const loginStreamOut = await createStreamOutFromStreamEvent(
-                trx,
-                newLoginStreamOut
-            );
+            });
             if (loginStreamOut === undefined) {
                 throw new Error('Failed to create stream out');
             }
-            notifySubscribers(trx, loginStreamOut);
+            results.push(loginStreamOut);
             break;
         }
         case 'like-intended': {
             // Pass thru the like-intended
             const streamOutLikeIntended = await createStreamOutFromStreamEvent(
                 trx,
-                newStreamEvent
+                streamEvent
             );
             if (streamOutLikeIntended === undefined) {
                 throw new Error('Failed to create stream out');
             }
-            notifySubscribers(trx, streamOutLikeIntended);
+            results.push(streamOutLikeIntended);
             // Get the game id
-            const gameId = newStreamEventData.payload.game.id;
+            const gameId = streamEvent.data.payload.game.id;
             // Get the game state
             const game = await findGameById(trx, gameId);
             console.log({ game });
             if (game !== undefined && game.likeCount < 50) {
-                const newStreamOutLikeSucceeded = {
-                    data: {
-                        type: 'like-succeeded',
-                        payload: {
-                            ...newStreamEventData.payload,
-                        },
-                    },
-                };
                 const streamOutLikeSucceeded =
-                    await createStreamOutFromStreamEvent(
-                        trx,
-                        newStreamOutLikeSucceeded
-                    );
+                    await createStreamOutFromStreamEvent(trx, {
+                        totalOrderId: streamEvent.totalOrderId,
+                        data: {
+                            type: 'like-succeeded',
+                            payload: {
+                                ...streamEvent.data.payload,
+                            },
+                        },
+                    });
                 if (streamOutLikeSucceeded === undefined) {
                     throw new Error('Failed to create stream out');
                 }
-                notifySubscribers(trx, streamOutLikeSucceeded);
+                results.push(streamOutLikeSucceeded);
                 await updateGame(trx, gameId, {
                     likeCount: game.likeCount + 1,
                 });
@@ -98,62 +95,53 @@ export async function processStreamEvent(
                     throw new Error('Failed to find game');
                 }
                 if (updatedGame.likeCount === 50) {
-                    const newStreamOutGameCompleted = {
+                    const streamOutGameCompleted =
+                        await createStreamOutFromStreamEvent(trx, {
+                            totalOrderId: streamEvent.totalOrderId,
+                            data: {
+                                // Don't pass the user email
+                                type: 'game-completed',
+                                payload: {
+                                    game: updatedGame,
+                                },
+                            },
+                        });
+                    if (streamOutGameCompleted === undefined) {
+                        throw new Error('Failed to create stream out');
+                    }
+                    results.push(streamOutGameCompleted);
+                    break;
+                }
+                const streamOutGameUpdated =
+                    await createStreamOutFromStreamEvent(trx, {
+                        totalOrderId: streamEvent.totalOrderId,
                         data: {
                             // Don't pass the user email
-                            type: 'game-completed',
+                            type: 'game-updated',
                             payload: {
                                 game: updatedGame,
                             },
                         },
-                    };
-                    const streamOutGameCompleted =
-                        await createStreamOutFromStreamEvent(
-                            trx,
-                            newStreamOutGameCompleted
-                        );
-                    if (streamOutGameCompleted === undefined) {
-                        throw new Error('Failed to create stream out');
-                    }
-                    notifySubscribers(trx, streamOutGameCompleted);
-                    break;
-                }
-                const newStreamOutGameUpdated = {
-                    data: {
-                        // Don't pass the user email
-                        type: 'game-updated',
-                        payload: {
-                            game: updatedGame,
-                        },
-                    },
-                };
-                const streamOutGameUpdated =
-                    await createStreamOutFromStreamEvent(
-                        trx,
-                        newStreamOutGameUpdated
-                    );
+                    });
                 if (streamOutGameUpdated === undefined) {
                     throw new Error('Failed to create stream out');
                 }
-                notifySubscribers(trx, streamOutGameUpdated);
+                results.push(streamOutGameUpdated);
                 break;
             }
-            const newStreamOut = {
+            const streamOut = await createStreamOutFromStreamEvent(trx, {
+                totalOrderId: streamEvent.totalOrderId,
                 data: {
                     type: 'like-failed',
                     payload: {
-                        ...newStreamEventData.payload,
+                        ...streamEvent.data.payload,
                     },
                 },
-            };
-            const streamOut = await createStreamOutFromStreamEvent(
-                trx,
-                newStreamOut
-            );
+            });
             if (streamOut === undefined) {
                 throw new Error('Failed to create stream out');
             }
-            notifySubscribers(trx, streamOut);
+            results.push(streamOut);
             break;
         }
         case 'game-started-intended': {
@@ -163,28 +151,26 @@ export async function processStreamEvent(
             if (newGame === undefined) {
                 throw new Error('Failed to create game');
             }
-            const newStreamOut = {
+            const streamOut = await createStreamOutFromStreamEvent(trx, {
+                totalOrderId: streamEvent.totalOrderId,
                 data: {
                     type: 'game-started-succeeded',
                     payload: {
                         // Don't pass user email
-                        // ...newStreamEventData.payload,
+                        // ...streamEvent.data.payload,
                         game: newGame,
                     },
                 },
-            };
-            const streamOut = await createStreamOutFromStreamEvent(
-                trx,
-                newStreamOut
-            );
+            });
             if (streamOut === undefined) {
                 throw new Error('Failed to create stream out');
             }
-            notifySubscribers(trx, streamOut);
+            results.push(streamOut);
             break;
         }
         default: {
             break;
         }
     }
+    return results;
 }

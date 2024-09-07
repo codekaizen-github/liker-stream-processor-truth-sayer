@@ -4,6 +4,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     await db.schema
         .createTable('streamOut')
         .addColumn('id', 'integer', (col) => col.primaryKey().autoIncrement())
+        .addColumn('totalOrderId', 'integer', (col) => col.notNull())
         // Add an arbitrary JSON column
         .addColumn('data', 'json', (col) => col.notNull())
         .execute();
@@ -15,7 +16,8 @@ export async function up(db: Kysely<any>): Promise<void> {
     await db.schema
         .createTable('upstreamControl')
         .addColumn('id', 'integer', (col) => col.primaryKey())
-        .addColumn('streamInId', 'integer', (col) => col.notNull())
+        .addColumn('streamId', 'integer', (col) => col.notNull())
+        .addColumn('totalOrderId', 'integer', (col) => col.notNull())
         .execute();
     await db.schema
         .createTable('game')
