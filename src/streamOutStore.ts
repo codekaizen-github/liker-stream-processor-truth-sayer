@@ -86,7 +86,6 @@ export async function createStreamOutFromStreamEvent(
     const streamOut = await createStreamOut(trx, {
         ...streamEvent,
         id: undefined,
-        totalOrderId: streamEvent.totalOrderId,
     });
     if (streamOut === undefined) {
         return undefined;
