@@ -1,27 +1,22 @@
 // Import the 'express' module
 import express from 'express';
 import { db } from './database';
-import {
-    createStreamOutFromStreamEvent,
-    findStreamOutsGreaterThanStreamId,
-    findTotallyOrderedStreamEventsGreaterThanStreamId,
-    getMostRecentStreamOut,
-} from './streamOutStore';
+import { findTotallyOrderedStreamEvents } from './streamOutStore';
 import {
     createHttpSubscriber,
     deleteHttpSubscriber,
     findHttpSubscribers,
 } from './httpSubscriberStore';
-import {
-    StreamEventIdDuplicateException,
-    StreamEventOutOfSequenceException,
-} from './exceptions';
 import onEvent from './transmissionControl/onEvent';
 import { buildFetchUpstream } from './transmissionControl/buildFetchUpstream';
-import { syncUpstream } from './transmissionControl/syncUpstream';
+import {
+    syncUpstream,
+    syncUpstreamFromUpstreamControl,
+} from './transmissionControl/syncUpstream';
 import { subscribe } from './subscribe';
 import { notifySubscribers } from './transmissionControl/notifySubscribers';
 import { getMostRecentTotallyOrderedStreamEvent } from './getMostRecentTotallyOrderedStreamEvent';
+import { getUpstreamControl } from './getUpstreamControl';
 
 // Create an Express application
 const app = express();
@@ -61,17 +56,49 @@ app.post('/streamIn', async (req, res) => {
 });
 
 app.get('/streamOut', async (req, res) => {
-    // Get the query parameter 'afterId' from the request
-    const afterId = Number(req.query.afterId);
+    console.log({ query: JSON.stringify(req.query) });
+    // Ignore
+    const totalOrderId = Number(req.query.totalOrderId);
+    const eventIdStart = Number(req.query.eventIdStart);
+    const eventIdEnd = req.query.eventIdEnd
+        ? Number(req.query.eventIdEnd)
+        : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const offset = req.query.offset ? Number(req.query.offset) : undefined;
+    // Get the upstreamControl lock
+    const upstreamControl = await getUpstreamControl();
+    // Make sure that our replica is up to date
+    if (upstreamControl.totalOrderId < totalOrderId) {
+        if (
+            process.env
+                .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT ===
+            undefined
+        ) {
+            throw new Error('Upstream URL is not defined');
+        }
+        await syncUpstream(
+            buildFetchUpstream(
+                process.env
+                    .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT
+            ),
+            totalOrderId,
+            upstreamControl.streamId,
+            eventIdEnd // We can stop at the end event ID for efficiency
+        );
+    }
     await db
         .transaction()
         .setIsolationLevel('serializable')
         .execute(async (trx) => {
-            const records =
-                await findTotallyOrderedStreamEventsGreaterThanStreamId(
-                    trx,
-                    afterId
-                );
+            // Get our upstream data if necessary
+            // Get our upstream
+            const records = await findTotallyOrderedStreamEvents(
+                trx,
+                eventIdStart,
+                eventIdEnd,
+                limit,
+                offset
+            );
             return res.json(records);
         });
     // Find all log records with an ID greater than 'afterId'
@@ -154,7 +181,7 @@ app.listen(port, () => {
             process.env
                 .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT
         );
-        await syncUpstream(fetchUpstream);
+        await syncUpstreamFromUpstreamControl(fetchUpstream);
     } catch (e) {
         console.error(e);
     }

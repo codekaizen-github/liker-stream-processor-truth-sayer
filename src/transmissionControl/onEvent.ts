@@ -1,7 +1,8 @@
 import {
     StreamEventIdDuplicateException,
     StreamEventOutOfSequenceException,
-} from '../exceptions';
+} from './exceptions';
+import { getUpstreamControl } from '../getUpstreamControl';
 import { FetchUpstream } from './buildFetchUpstream';
 import { notifySubscribers } from './notifySubscribers';
 import { onEventProcessSingle } from './onEventProcessSingle';
@@ -19,7 +20,6 @@ export default async function onEvent(
     // Get the upstream control lock
     try {
         const results = await onEventProcessSingle(event);
-        console.log({ results });
         if (results.length) {
             for (const result of results) {
                 notifySubscribers(result);
@@ -32,7 +32,13 @@ export default async function onEvent(
         }
         if (e instanceof StreamEventOutOfSequenceException) {
             console.log('Out of sequence event ID', event);
-            await syncUpstream(fetchUpstream);
+            const upstreamControl = await getUpstreamControl();
+            await syncUpstream(
+                fetchUpstream,
+                event.totalOrderId,
+                upstreamControl.streamId,
+                event.id // We can stop at the end event ID for efficiency
+            );
         }
     }
 }

@@ -1,12 +1,5 @@
-import { Transaction } from 'kysely';
-import {
-    StreamOutUpdate,
-    StreamOut,
-    NewStreamOut,
-    Database,
-    NewStreamEvent,
-    OrderedStreamEvent,
-} from './types';
+import { SelectQueryBuilder, Transaction } from 'kysely';
+import { StreamOutUpdate, StreamOut, NewStreamOut, Database } from './types';
 import {
     NewTotallyOrderedStreamEvent,
     TotallyOrderedStreamEvent,
@@ -33,6 +26,46 @@ export async function findStreamOuts(
         query = query.where('id', '=', criteria.id); // Kysely is immutable, you must re-assign!
     }
     return await query.selectAll().execute();
+}
+
+export function getTotallyOrderedStreamEventQueryBuilder(
+    trx: Transaction<Database>,
+    eventIdStart: number,
+    eventIdEnd?: number
+): SelectQueryBuilder<Database, 'streamOut', {}> {
+    let query = trx.selectFrom('streamOut');
+    query.where('id', '>=', eventIdStart);
+    if (eventIdEnd !== undefined) {
+        query = query.where('id', '<=', eventIdEnd); // Kysely is immutable, you must re-assign!
+    }
+    return query;
+}
+
+export async function findTotallyOrderedStreamEvents(
+    trx: Transaction<Database>,
+    eventIdStart: number,
+    eventIdEnd?: number,
+    limit?: number,
+    offset?: number
+): Promise<TotallyOrderedStreamEvent[]> {
+    let query = getTotallyOrderedStreamEventQueryBuilder(
+        trx,
+        eventIdStart,
+        eventIdEnd
+    );
+    if (limit !== undefined) {
+        query = query.limit(limit);
+    }
+    if (offset !== undefined) {
+        query = query.offset(offset);
+    }
+    const queryResults = await query.selectAll().orderBy('id', 'asc').execute();
+    return queryResults.map((result) => {
+        return {
+            ...result,
+            totalOrderId: result.id,
+        };
+    });
 }
 
 export async function findTotallyOrderedStreamEventsGreaterThanStreamId(
