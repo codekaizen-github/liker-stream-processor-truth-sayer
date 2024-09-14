@@ -82,8 +82,8 @@ app.get('/streamOut', async (req, res) => {
                     .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT
             ),
             totalOrderId,
-            upstreamControl.streamId,
-            eventIdEnd // We can stop at the end event ID for efficiency
+            upstreamControl.streamId
+            // eventIdEnd // We can't stop here because the eventIdEnd passed in params is not the same eventIdEnd in the upstream
         );
     }
     await db
