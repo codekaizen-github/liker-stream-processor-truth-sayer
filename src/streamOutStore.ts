@@ -30,11 +30,13 @@ export async function findStreamOuts(
 
 export function getTotallyOrderedStreamEventQueryBuilder(
     trx: Transaction<Database>,
-    eventIdStart: number,
+    eventIdStart?: number,
     eventIdEnd?: number
 ): SelectQueryBuilder<Database, 'streamOut', {}> {
     let query = trx.selectFrom('streamOut');
-    query.where('id', '>=', eventIdStart);
+    if (eventIdStart !== undefined) {
+        query = query.where('id', '>=', eventIdStart); // Kysely is immutable, you must re-assign!
+    }
     if (eventIdEnd !== undefined) {
         query = query.where('id', '<=', eventIdEnd); // Kysely is immutable, you must re-assign!
     }
@@ -43,7 +45,7 @@ export function getTotallyOrderedStreamEventQueryBuilder(
 
 export async function findTotallyOrderedStreamEvents(
     trx: Transaction<Database>,
-    eventIdStart: number,
+    eventIdStart?: number,
     eventIdEnd?: number,
     limit?: number,
     offset?: number
@@ -55,9 +57,9 @@ export async function findTotallyOrderedStreamEvents(
     );
     if (limit !== undefined) {
         query = query.limit(limit);
-    }
-    if (offset !== undefined) {
-        query = query.offset(offset);
+        if (offset !== undefined) {
+            query = query.offset(offset);
+        }
     }
     const queryResults = await query.selectAll().orderBy('id', 'asc').execute();
     return queryResults.map((result) => {
