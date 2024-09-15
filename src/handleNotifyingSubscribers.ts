@@ -22,7 +22,7 @@ export async function notifySubscriberUrl(
     url: string,
     streamOut: TotallyOrderedStreamEvent
 ): Promise<void> {
-    console.log('notifying subscriber:', { streamOut });
+    console.log('notifying subscriber:', { streamOut: JSON.stringify(streamOut) });
     try {
         await fetch(url, {
             method: 'POST',
