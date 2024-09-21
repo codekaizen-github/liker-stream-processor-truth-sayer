@@ -10,6 +10,7 @@ export interface OrderedStreamEvent {
 }
 
 export interface Database {
+    streamOutIncrementor: StreamOutIncrementorTable;
     streamOut: StreamOutTable;
     httpSubscriber: HttpSubscriberTable;
     upstreamControl: UpstreamControlTable;
@@ -23,6 +24,7 @@ export interface Database {
 // `NewPerson` and `PersonUpdate` types below.
 export interface StreamOutTable {
     id: Generated<number>;
+    streamId: number;
     totalOrderId: number;
     data: any;
 }
@@ -71,3 +73,21 @@ export interface UserTable {
 export type User = Selectable<UserTable>;
 export type NewUser = Insertable<UserTable>;
 export type UserUpdate = Updateable<UserTable>;
+
+export interface StreamOutIncrementorTable {
+    id: number; // Will always be 0
+    streamId: number;
+}
+
+export type StreamOutIncrementor = Selectable<StreamOutIncrementorTable>;
+export type NewStreamOutIncrementor = Insertable<StreamOutIncrementorTable>;
+export type StreamOutIncrementorUpdate = Updateable<StreamOutIncrementorTable>;
+
+export interface FencingTokenTable {
+    id: Generated<number>;
+    token: number;
+}
+
+export type FencingToken = Selectable<FencingTokenTable>;
+export type NewFencingToken = Insertable<FencingTokenTable>;
+export type FencingTokenUpdate = Updateable<FencingTokenTable>;

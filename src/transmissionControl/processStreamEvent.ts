@@ -8,11 +8,7 @@ import { createTotallyOrderedStreamEvents } from '../createTotallyOrderedStreamE
 
 export async function processStreamEvent(
     trx: Transaction<Database>,
-    newNotYetTotallyOrderedStreamEvent: NewTotallyOrderedStreamEvent
+    event: NewTotallyOrderedStreamEvent
 ): Promise<TotallyOrderedStreamEvent[]> {
-    const results = await createTotallyOrderedStreamEvents(
-        trx,
-        newNotYetTotallyOrderedStreamEvent
-    );
-    return results;
+    return await createTotallyOrderedStreamEvents(trx, event);
 }

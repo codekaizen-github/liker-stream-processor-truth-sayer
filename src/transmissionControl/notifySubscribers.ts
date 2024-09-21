@@ -1,7 +1,8 @@
 import { TotallyOrderedStreamEvent } from './types';
 import { handleNotifyingSubscribers } from '../handleNotifyingSubscribers';
 export async function notifySubscribers(
-    streamOut: TotallyOrderedStreamEvent
+    streamOut: TotallyOrderedStreamEvent[],
+    totalOrderId: number
 ): Promise<void> {
-    await handleNotifyingSubscribers(streamOut);
+    await handleNotifyingSubscribers(streamOut, totalOrderId);
 }

@@ -5,6 +5,8 @@ async function reset() {
     console.log('Resetting database');
     await sql`TRUNCATE TABLE streamOut`.execute(db);
     console.log('Truncated streamOut');
+    await sql`TRUNCATE TABLE streamOutIncrementor`.execute(db);
+    console.log('Truncated streamOutIncrementor');
     await sql`TRUNCATE TABLE upstreamControl`.execute(db);
     console.log('Truncated upstreamControl');
     await sql`TRUNCATE TABLE game`.execute(db);

@@ -7,12 +7,35 @@ import {
 } from './transmissionControl/types';
 import { createUser, findUserByEmail } from './userStore';
 import { createGame, findGameById, updateGame } from './gameStore';
+import {
+    getStreamOutIncrementorForUpdate,
+    insertIntoIgnoreStreamOutIncrementor,
+} from './streamOutIncrementorStore';
 
 export async function createTotallyOrderedStreamEvents(
     trx: Transaction<Database>,
     streamEvent: NewTotallyOrderedStreamEvent
 ): Promise<TotallyOrderedStreamEvent[]> {
     const results: TotallyOrderedStreamEvent[] = [];
+    const incrementorForUpdateLock = await getStreamOutIncrementorForUpdate(
+        trx,
+        0
+    ); // Prevents duplicate entry keys and insertions in other tables
+    const incrementorControlIgnore = await insertIntoIgnoreStreamOutIncrementor(
+        trx,
+        {
+            id: 0,
+            streamId: 0,
+        }
+    );
+    const incrementorControl = await getStreamOutIncrementorForUpdate(trx, 0);
+    if (incrementorControl === undefined) {
+        throw new Error('Failed to get incrementor control lock');
+    }
+    const incrementorControlToUpdate = {
+        id: 0,
+        streamId: incrementorControl.streamId,
+    };
     switch (streamEvent.data.type) {
         case 'user-login-intended': {
             const userEmail = streamEvent.data.payload.user.email;
@@ -24,9 +47,11 @@ export async function createTotallyOrderedStreamEvents(
                 if (newUser === undefined) {
                     throw new Error('Failed to create user');
                 }
+
                 const userStreamOut = await createStreamOutFromStreamEvent(
                     trx,
                     {
+                        streamId: ++incrementorControlToUpdate.streamId,
                         totalOrderId: streamEvent.totalOrderId,
                         data: {
                             type: 'create-new-user-succeeded',
@@ -42,7 +67,9 @@ export async function createTotallyOrderedStreamEvents(
                 }
                 results.push(userStreamOut);
             }
+
             const loginStreamOut = await createStreamOutFromStreamEvent(trx, {
+                streamId: ++incrementorControlToUpdate.streamId,
                 totalOrderId: streamEvent.totalOrderId,
                 data: {
                     type: 'user-login-succeeded',
@@ -75,6 +102,7 @@ export async function createTotallyOrderedStreamEvents(
             if (game !== undefined && game.likeCount < 50) {
                 const streamOutLikeSucceeded =
                     await createStreamOutFromStreamEvent(trx, {
+                        streamId: ++incrementorControlToUpdate.streamId,
                         totalOrderId: streamEvent.totalOrderId,
                         data: {
                             type: 'like-succeeded',
@@ -97,6 +125,7 @@ export async function createTotallyOrderedStreamEvents(
                 if (updatedGame.likeCount === 50) {
                     const streamOutGameCompleted =
                         await createStreamOutFromStreamEvent(trx, {
+                            streamId: ++incrementorControlToUpdate.streamId,
                             totalOrderId: streamEvent.totalOrderId,
                             data: {
                                 // Don't pass the user email
@@ -112,8 +141,10 @@ export async function createTotallyOrderedStreamEvents(
                     results.push(streamOutGameCompleted);
                     break;
                 }
+
                 const streamOutGameUpdated =
                     await createStreamOutFromStreamEvent(trx, {
+                        streamId: ++incrementorControlToUpdate.streamId,
                         totalOrderId: streamEvent.totalOrderId,
                         data: {
                             // Don't pass the user email
@@ -129,7 +160,9 @@ export async function createTotallyOrderedStreamEvents(
                 results.push(streamOutGameUpdated);
                 break;
             }
+
             const streamOut = await createStreamOutFromStreamEvent(trx, {
+                streamId: ++incrementorControlToUpdate.streamId,
                 totalOrderId: streamEvent.totalOrderId,
                 data: {
                     type: 'like-failed',
@@ -152,6 +185,7 @@ export async function createTotallyOrderedStreamEvents(
                 throw new Error('Failed to create game');
             }
             const streamOut = await createStreamOutFromStreamEvent(trx, {
+                streamId: ++incrementorControlToUpdate.streamId,
                 totalOrderId: streamEvent.totalOrderId,
                 data: {
                     type: 'game-started-succeeded',

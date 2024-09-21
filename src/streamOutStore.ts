@@ -97,6 +97,28 @@ export async function getMostRecentStreamOut(trx: Transaction<Database>) {
         .executeTakeFirst();
 }
 
+export async function getMostRecentStreamOutsWithSameTotalOrderId(
+    trx: Transaction<Database>
+) {
+    // Get the max totalOrderId
+    const mostRecent = await trx
+        .selectFrom('streamOut')
+        .orderBy('id', 'desc')
+        .limit(1)
+        .selectAll()
+        .executeTakeFirst();
+    if (mostRecent === undefined) {
+        return [];
+    }
+    const results = await trx
+        .selectFrom('streamOut')
+        .where('totalOrderId', '=', mostRecent.totalOrderId)
+        .orderBy('id', 'asc')
+        .selectAll()
+        .execute();
+    return results === undefined ? [] : results;
+}
+
 export async function updateStreamOut(
     trx: Transaction<Database>,
     id: number,
@@ -114,8 +136,9 @@ export async function createStreamOutFromStreamEvent(
     streamEvent: NewTotallyOrderedStreamEvent
 ) {
     const streamOut = await createStreamOut(trx, {
-        ...streamEvent,
-        id: undefined,
+        streamId: streamEvent.streamId,
+        totalOrderId: streamEvent.totalOrderId,
+        data: streamEvent.data,
     });
     if (streamOut === undefined) {
         return undefined;
@@ -125,7 +148,7 @@ export async function createStreamOutFromStreamEvent(
 
 export async function createStreamOut(
     trx: Transaction<Database>,
-    streamOut: NewStreamOut
+    streamOut: NewTotallyOrderedStreamEvent
 ) {
     const { insertId } = await trx
         .insertInto('streamOut')
@@ -135,6 +158,7 @@ export async function createStreamOut(
         })
         .executeTakeFirstOrThrow();
     const streamOutResult = await findStreamOutById(trx, Number(insertId));
+    console.log({ streamOutResult });
     if (streamOutResult === undefined) {
         throw new Error('Failed to create stream out');
     }

@@ -9,15 +9,25 @@ import {
 } from './httpSubscriberStore';
 import onEvent from './transmissionControl/onEvent';
 import { buildFetchUpstream } from './transmissionControl/buildFetchUpstream';
-import {
-    syncUpstream,
-    syncUpstreamFromUpstreamControl,
-} from './transmissionControl/syncUpstream';
 import { subscribe } from './subscribe';
 import { notifySubscribers } from './transmissionControl/notifySubscribers';
-import { getMostRecentTotallyOrderedStreamEvent } from './getMostRecentTotallyOrderedStreamEvent';
-import { getUpstreamControl } from './getUpstreamControl';
+import { getMostRecentTotallyOrderedStreamEvents } from './getMostRecentTotallyOrderedStreamEvents';
+import {
+    getUpstreamControl,
+    getUpstreamControlForTransaction,
+} from './getUpstreamControl';
+import { StreamEventOutOfSequenceException } from './transmissionControl/exceptions';
+import { TotallyOrderedStreamEvent } from './transmissionControl/types';
 
+if (
+    undefined ==
+    process.env.LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT
+) {
+    throw new Error('Undefined upstream URL');
+}
+const fetchUpstreamFunc = buildFetchUpstream(
+    process.env.LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT
+);
 // Create an Express application
 const app = express();
 
@@ -33,30 +43,36 @@ app.get('/', (req, res) => {
 });
 
 app.post('/streamIn', async (req, res) => {
+    if (!Array.isArray(req.body.events)) {
+        return res.status(400).send();
+    }
+    if (isNaN(Number(req.body.totalOrderId))) {
+        return res.status(400).send();
+    }
+    const totalOrderId: number = req.body.totalOrderId;
+    const events: TotallyOrderedStreamEvent[] = req.body.events;
     try {
-        if (
-            process.env
-                .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT ===
-            undefined
-        ) {
-            throw new Error('Upstream URL is not defined');
-        }
-        await onEvent(
-            req.body,
-            buildFetchUpstream(
-                process.env
-                    .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT
-            )
-        );
+        await onEvent(events, totalOrderId);
     } catch (e) {
         console.error(e);
+        if (e instanceof StreamEventOutOfSequenceException) {
+            try {
+                const upstreamControl = await getUpstreamControl();
+                const responseBody = await fetchUpstreamFunc(
+                    totalOrderId,
+                    upstreamControl?.streamId ?? 0
+                );
+                await onEvent(responseBody.events, responseBody.totalOrderId);
+            } catch (e) {
+                return res.status(500).send();
+            }
+        }
         return res.status(500).send();
     }
     return res.status(201).send();
 });
 
 app.get('/streamOut', async (req, res) => {
-    console.log({ query: JSON.stringify(req.query) });
     // Ignore
     let totalOrderId = !isNaN(Number(req.query.totalOrderId))
         ? Number(req.query.totalOrderId)
@@ -73,36 +89,26 @@ app.get('/streamOut', async (req, res) => {
     let offset = !isNaN(Number(req.query.offset))
         ? Number(req.query.offset)
         : undefined;
-    // Get the upstreamControl lock
+    // Get the upstreamControl
     const upstreamControl = await getUpstreamControl();
     // Make sure that our replica is up to date
     if (
         totalOrderId !== undefined &&
-        upstreamControl.totalOrderId < totalOrderId
+        (upstreamControl?.totalOrderId ?? 0) < totalOrderId
     ) {
-        if (
-            process.env
-                .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT ===
-            undefined
-        ) {
-            throw new Error('Upstream URL is not defined');
-        }
-        await syncUpstream(
-            buildFetchUpstream(
-                process.env
-                    .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT
-            ),
+        const responseBody = await fetchUpstreamFunc(
             totalOrderId,
-            upstreamControl.streamId
-            // eventIdEnd // We can't stop here because the eventIdEnd passed in params is not the same eventIdEnd in the upstream
+            upstreamControl?.streamId ?? 0
         );
+        totalOrderId = responseBody.totalOrderId;
+        await onEvent(responseBody.events, responseBody.totalOrderId);
     }
     await db
         .transaction()
         .setIsolationLevel('serializable')
         .execute(async (trx) => {
-            // Get our upstream data if necessary
             // Get our upstream
+            const upstreamControl = await getUpstreamControlForTransaction(trx);
             const records = await findTotallyOrderedStreamEvents(
                 trx,
                 eventIdStart,
@@ -110,7 +116,10 @@ app.get('/streamOut', async (req, res) => {
                 limit,
                 offset
             );
-            return res.json(records);
+            return res.json({
+                totalOrderId: upstreamControl?.totalOrderId ?? 0,
+                events: records,
+            });
         });
     // Find all log records with an ID greater than 'afterId'
     // Send the records to the client
@@ -181,30 +190,20 @@ app.listen(port, () => {
 // Poll for the latest log records
 (async () => {
     try {
-        if (
-            process.env
-                .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT ===
-            undefined
-        ) {
-            return;
-        }
-        const fetchUpstream = buildFetchUpstream(
-            process.env
-                .LIKER_STREAM_PROCESSOR_TRUTH_SAYER_UPSTREAM_URL_STREAM_OUT
+        const upstreamControl = await getUpstreamControl();
+        const responseBody = await fetchUpstreamFunc(
+            upstreamControl?.totalOrderId ?? 0,
+            upstreamControl?.streamId ?? 0
         );
-        await syncUpstreamFromUpstreamControl(fetchUpstream);
+        await onEvent(responseBody.events, responseBody.totalOrderId);
     } catch (e) {
         console.error(e);
     }
 })();
 
 // Get the most recent log record and notify subscribers
-// Get the most recent log record and notify subscribers
 (async () => {
-    const result = await getMostRecentTotallyOrderedStreamEvent();
-    if (result === undefined) {
-        return;
-    }
+    const result = await getMostRecentTotallyOrderedStreamEvents();
     // non-blocking
-    notifySubscribers(result);
+    notifySubscribers(result.events, result.totalOrderId);
 })();
