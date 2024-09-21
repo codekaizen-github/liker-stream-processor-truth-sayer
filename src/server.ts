@@ -54,7 +54,6 @@ app.post('/streamIn', async (req, res) => {
     try {
         await onEvent(events, totalOrderId);
     } catch (e) {
-        console.error(e);
         if (e instanceof StreamEventOutOfSequenceException) {
             try {
                 const upstreamControl = await getUpstreamControl();

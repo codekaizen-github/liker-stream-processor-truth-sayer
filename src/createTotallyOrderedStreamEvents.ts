@@ -10,6 +10,7 @@ import { createGame, findGameById, updateGame } from './gameStore';
 import {
     getStreamOutIncrementorForUpdate,
     insertIntoIgnoreStreamOutIncrementor,
+    updateStreamOutIncrementor,
 } from './streamOutIncrementorStore';
 
 export async function createTotallyOrderedStreamEvents(
@@ -206,5 +207,6 @@ export async function createTotallyOrderedStreamEvents(
             break;
         }
     }
+    await updateStreamOutIncrementor(trx, 0, incrementorControlToUpdate);
     return results;
 }
