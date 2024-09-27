@@ -6,6 +6,29 @@ import {
     Database,
 } from './types';
 
+export async function getSingleStreamOutIncrementorForUpdateWithDefault(
+    trx: Transaction<Database>
+) {
+    await getStreamOutIncrementorForUpdate(trx, 0); // Prevents duplicate entry keys and insertions in other tables
+    await insertIntoIgnoreStreamOutIncrementor(trx, {
+        id: 0,
+        streamId: 0,
+    });
+    const incrementor = await getStreamOutIncrementorForUpdate(trx, 0);
+    return incrementor;
+}
+
+export async function updateSingleStreamOutIncrementor(
+    trx: Transaction<Database>,
+    updateWith: StreamOutIncrementorUpdate
+) {
+    await trx
+        .updateTable('streamOutIncrementor')
+        .set(updateWith)
+        .where('id', '=', 0)
+        .execute();
+}
+
 export async function findStreamOutIncrementorById(
     trx: Transaction<Database>,
     id: number

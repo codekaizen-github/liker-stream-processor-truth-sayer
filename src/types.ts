@@ -15,7 +15,9 @@ export interface Database {
     httpSubscriber: HttpSubscriberTable;
     upstreamControl: UpstreamControlTable;
     game: GameTable;
+    gameIncrementor: GameIncrementorTable;
     user: UserTable;
+    userIncrementor: UserIncrementorTable;
 }
 
 // This interface describes the `person` table to Kysely. Table
@@ -58,6 +60,7 @@ export type UpstreamControlUpdate = Updateable<UpstreamControlTable>;
 
 export interface GameTable {
     id: Generated<number>;
+    gameId: number;
     likeCount: number;
 }
 
@@ -67,6 +70,7 @@ export type GameUpdate = Updateable<GameTable>;
 
 export interface UserTable {
     id: Generated<number>;
+    userId: number;
     email: string;
 }
 
@@ -91,3 +95,21 @@ export interface FencingTokenTable {
 export type FencingToken = Selectable<FencingTokenTable>;
 export type NewFencingToken = Insertable<FencingTokenTable>;
 export type FencingTokenUpdate = Updateable<FencingTokenTable>;
+
+export interface GameIncrementorTable {
+    id: number; // Will always be 0
+    gameId: number;
+}
+
+export type GameIncrementor = Selectable<GameIncrementorTable>;
+export type NewGameIncrementor = Insertable<GameIncrementorTable>;
+export type GameIncrementorUpdate = Updateable<GameIncrementorTable>;
+
+export interface UserIncrementorTable {
+    id: number; // Will always be 0
+    userId: number;
+}
+
+export type UserIncrementor = Selectable<UserIncrementorTable>;
+export type NewUserIncrementor = Insertable<UserIncrementorTable>;
+export type UserIncrementorUpdate = Updateable<UserIncrementorTable>;
