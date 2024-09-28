@@ -84,6 +84,14 @@ export async function createTotallyOrderedStreamEvents(
     }
     switch (streamEvent.data.type) {
         case 'like-intended': {
+            // Get the game id
+            const gameId = streamEvent.data.payload.game.id;
+            // Get the game state
+            const game = await findGameById(trx, gameId);
+            if (game === undefined) {
+                console.error('Game not found: ', gameId);
+                break;
+            }
             // Pass thru the like-intended
             const streamOutLikeIntended = await createStreamOutFromStreamEvent(
                 trx,
@@ -102,10 +110,6 @@ export async function createTotallyOrderedStreamEvents(
                 throw new Error('Failed to create stream out');
             }
             results.push(streamOutLikeIntended);
-            // Get the game id
-            const gameId = streamEvent.data.payload.game.id;
-            // Get the game state
-            const game = await findGameById(trx, gameId);
             console.log({ game });
             if (game !== undefined && game.likeCount < 50) {
                 const streamOutLikeSucceeded =
