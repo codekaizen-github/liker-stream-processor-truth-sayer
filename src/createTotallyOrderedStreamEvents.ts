@@ -24,6 +24,10 @@ export async function createTotallyOrderedStreamEvents(
     trx: Transaction<Database>,
     streamEvent: NewTotallyOrderedStreamEvent
 ): Promise<TotallyOrderedStreamEvent[]> {
+    console.log({
+        ...streamEvent,
+        payload: JSON.stringify(streamEvent.data.payload),
+    });
     const results: TotallyOrderedStreamEvent[] = [];
     const streamOutIncrementorToUpdate =
         await getSingleStreamOutIncrementorForUpdateWithDefault(trx);
@@ -80,6 +84,7 @@ export async function createTotallyOrderedStreamEvents(
         results.push(loginStreamOut);
     }
     if (user === undefined) {
+        console.log('User not found: ', userEmail);
         return results;
     }
     switch (streamEvent.data.type) {
@@ -202,7 +207,22 @@ export async function createTotallyOrderedStreamEvents(
             if (newGame === undefined) {
                 throw new Error('Failed to create game');
             }
-            const streamOut = await createStreamOutFromStreamEvent(trx, {
+            const streamOutGameStartedIntended = await createStreamOutFromStreamEvent(trx, {
+                streamId: ++streamOutIncrementorToUpdate.streamId,
+                totalOrderId: streamEvent.totalOrderId,
+                data: {
+                    type: 'game-started-intended',
+                    payload: {
+                        // Don't pass user email
+                        ...streamEvent.data.payload
+                    },
+                },
+            });
+            if (streamOutGameStartedIntended === undefined) {
+                throw new Error('Failed to create stream out');
+            }
+            results.push(streamOutGameStartedIntended);
+            const streamOutGameStartedSucceeded = await createStreamOutFromStreamEvent(trx, {
                 streamId: ++streamOutIncrementorToUpdate.streamId,
                 totalOrderId: streamEvent.totalOrderId,
                 data: {
@@ -214,10 +234,10 @@ export async function createTotallyOrderedStreamEvents(
                     },
                 },
             });
-            if (streamOut === undefined) {
+            if (streamOutGameStartedSucceeded === undefined) {
                 throw new Error('Failed to create stream out');
             }
-            results.push(streamOut);
+            results.push(streamOutGameStartedSucceeded);
             break;
         }
         default: {
