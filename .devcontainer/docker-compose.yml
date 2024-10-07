@@ -9,6 +9,8 @@ services:
         networks:
             - liker_external_network
             - liker_stream_processor_truth_sayer_internal_network
+        dns:
+            - 8.8.8.8
     db:
         networks:
             - liker_stream_processor_truth_sayer_internal_network
